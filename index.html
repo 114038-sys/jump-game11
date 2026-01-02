@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    <link rel="stylesheet" href="./style.css">
+
+  </head>
+    
+  <body>
+  <html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>郭熙：墨劍行 (近戰版)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #2b2b2b;
+            font-family: "Microsoft JhengHei", serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #eee;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            border: 10px solid #4e342e;
+            background-color: #E6DBC6;
+        }
+        canvas { display: block; }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            padding: 15px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 20px;
+            color: #3e2723;
+            text-shadow: 1px 1px 0 rgba(255,255,255,0.6);
+        }
+        
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(230, 219, 198, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #3e2723;
+            text-align: center;
+            z-index: 20;
+            pointer-events: auto;
+        }
+        .hidden { display: none !important; }
+        
+        h1 { font-size: 50px; margin: 0 0 10px 0; border-bottom: 3px solid #3e2723; }
+        p { font-size: 18px; line-height: 1.5; max-width: 600px; }
+        
+        .btn {
+            margin-top: 25px; padding: 12px 35px; font-size: 24px;
+            background: #3e2723; color: #E6DBC6; border: 2px solid #2b2b2b;
+            cursor: pointer; transition: all 0.1s;
+        }
+        .btn:hover { transform: scale(1.05); background: #5d4037; }
+        
+        .hearts { color: #d32f2f; font-size: 24px; }
+        .level-name { font-size: 28px; position: absolute; top: 15px; width: 100%; text-align: center; opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+    
+    <div id="ui-layer" class="hidden">
+        <div>生命: <span id="hp-display" class="hearts">♥♥♥♥</span></div>
+        <div class="level-name" id="level-display">第一卷</div>
+        <div>分數: <span id="score-display">0</span></div>
+    </div>
+
+    <div id="start-screen" class="overlay">
+        <h1>郭熙：墨劍行</h1>
+        <p>以筆化劍，斬斷迷霧。<br>近戰版本：無需彈藥，貼近敵人揮砍！</p>
+        <div style="background:rgba(255,255,255,0.5); padding:15px; border-radius:5px; margin-top:20px;">
+            移動: ⬅️ ➡️<br>
+            跳躍: SPACE<br>
+            <strong>揮劍: J 或 Z</strong>
+        </div>
+        <button class="btn" onclick="startGame()">拔劍起舞</button>
+    </div>
+
+    <div id="end-screen" class="overlay hidden">
+        <h1 id="end-title"></h1>
+        <p id="end-msg"></p>
+        <p>得分: <span id="final-score">0</span></p>
+        <button class="btn" id="next-btn" onclick="nextLevel()">下一卷</button>
+        <button class="btn hidden" id="restart-btn" onclick="resetGame()">重新挑戰</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const uiLayer = document.getElementById('ui-layer');
+const startScreen = document.getElementById('start-screen');
+const endScreen = document.getElementById('end-screen');
+
+const GRAVITY = 0.5;
+const TILE = 50;
+
+// 關卡資料
+const levels = [
+    {
+        name: "卷一：劍氣初現",
+        data: [
+            "                                                                   ",
+            "                                                                   ",
+            "                                                                   ",
+            "                    4                                              ",
+            "              222       4         222                     9        ",
+            "        4            22222               4           222222        ",
+            "111  111111                 11111     111111     111111111111      ",
+            "1113311111133333333333333333111113333311111133333111111111111      "
+        ]
+    },
+    {
+        name: "卷二：雲中斬妖",
+        data: [
+            "                                                                              ",
+            "                                                                              ",
+            "                                        5      5    5                         ",
+            "                        222    222     222    222  222                        ",
+            "                       2   2                                      9           ",
+            "          222   222   2     2    4      33           4      22222222          ",
+            "      4                   3     222    2222         222                       ",
+            "11111111     111     11111111       11      11   11     11111111111111        ",
+            "1111111133333111333331111111133333331133333311333113333311111111111111        "
+        ]
+    },
+    {
+        name: "卷三：混沌劍魔 (BOSS)",
+        data: [
+            "                                                                                  ",
+            "                                                                                  ",
+            "                                                                                  ",
+            "                                                                                  ",
+            "                                      222           8                             ",
+            "                       5             2   2        22222                           ",
+            "                      222     5     2     2      2222222                          ",
+            "             2222            222   2       2    222222222                     9   ",
+            "      4     2    2                  3     3    22222222222  4  4  4        222222 ",
+            "11111111   1      1   1111111111111111111111111111111111111111111111     11111111 ",
+            "111111113331333333133311111111111111111111111111111111111111111111113333311111111 "
+        ]
+    }
+];
+
+let state = { levelIdx: 0, running: false, width: 0, cameraX: 0, score: 0 };
+let player;
+let entities = [];
+const keys = { left:false, right:false, up:false, attack:false };
+
+// 監聽
+window.addEventListener('keydown', e => {
+    if(e.code==='KeyA' || e.code==='ArrowLeft') keys.left=true;
+    if(e.code==='KeyD' || e.code==='ArrowRight') keys.right=true;
+    if(e.code==='Space' || e.code==='KeyW' || e.code==='ArrowUp') keys.up=true;
+    if(e.code==='KeyJ' || e.code==='KeyZ') {
+        if(!keys.attack) player.slash(); // 按下瞬間觸發攻擊
+        keys.attack=true;
+    }
+});
+window.addEventListener('keyup', e => {
+    if(e.code==='KeyA' || e.code==='ArrowLeft') keys.left=false;
+    if(e.code==='KeyD' || e.code==='ArrowRight') keys.right=false;
+    if(e.code==='Space' || e.code==='KeyW' || e.code==='ArrowUp') keys.up=false;
+    if(e.code==='KeyJ' || e.code==='KeyZ') keys.attack=false;
+});
+
+class Entity {
+    constructor(x, y, w, h, type) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.type = type;
+        this.vx = 0; this.vy = 0;
+        this.dead = false;
+    }
+    draw(ctx) { ctx.fillStyle="#000"; ctx.fillRect(this.x, this.y, this.w, this.h); }
+    intersect(r) {
+        return (this.x < r.x + r.w && this.x + this.w > r.x &&
+                this.y < r.y + r.h && this.y + this.h > r.y);
+    }
+}
+
+class Player extends Entity {
+    constructor(x, y) {
+        super(x, y, 30, 40, 'player');
+        this.hp = 4;
+        this.maxHp = 4;
+        this.speed = 6;
+        this.jumpPower = -12;
+        this.grounded = false;
+        this.facingRight = true;
+        this.invincible = 0;
+        
+        // 攻擊相關
+        this.attackCooldown = 0;
+        this.attackAnimTimer = 0; // 顯示揮劍動畫的時間
+    }
+    
+    update() {
+        // 移動
+        if (keys.left) { this.vx = -this.speed; this.facingRight = false; }
+        else if (keys.right) { this.vx = this.speed; this.facingRight = true; }
+        else { this.vx *= 0.8; }
+
+        if (keys.up && this.grounded) {
+            this.vy = this.jumpPower;
+            this.grounded = false;
+        }
+
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.y > 600) this.takeDamage(100);
+        if (this.invincible > 0) this.invincible--;
+        if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.attackAnimTimer > 0) this.attackAnimTimer--;
+
+        // 邊界
+        if (this.x < 0) this.x = 0;
+        if (this.x > state.width - this.w) this.x = state.width - this.w;
+    }
+
+    slash() {
+        if (this.attackCooldown > 0) return;
+        
+        this.attackCooldown = 20; // 冷卻時間
+        this.attackAnimTimer = 10; // 動畫時間
+        
+        // 計算攻擊判定框 (前方)
+        let range = 60;
+        let hitBox = {
+            x: this.facingRight ? this.x + this.w : this.x - range,
+            y: this.y - 10,
+            w: range,
+            h: this.h + 20
+        };
+
+        // 檢查擊中敵人
+        entities.forEach(e => {
+            if (e.type === 'enemy' && !e.dead) {
+                if (checkRectCollide(hitBox, e)) {
+                    e.takeDamage(1, this.facingRight ? 5 : -5); // 擊退效果
+                    createParticles(e.x + e.w/2, e.y + e.h/2, 5, '#fff'); // 打擊特效
+                }
+            }
+            // 砍子彈
+            if (e.type === 'enemy_bullet' && !e.dead) {
+                if (checkRectCollide(hitBox, e)) {
+                    e.dead = true; // 斬斷子彈
+                    createParticles(e.x, e.y, 3, '#ccc');
+                }
+            }
+        });
+    }
+
+    draw(ctx) {
+        if (this.invincible > 0 && Math.floor(Date.now()/100)%2===0) return;
+        
+        // 身體
+        ctx.fillStyle = "#212121";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        
+        // 揮劍動畫
+        if (this.attackAnimTimer > 0) {
+            ctx.save();
+            ctx.translate(this.x + this.w/2, this.y + this.h/2);
+            if (!this.facingRight) ctx.scale(-1, 1);
+            
+            // 劍氣
+            ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.beginPath();
+            ctx.arc(10, 0, 50, -Math.PI/3, Math.PI/3);
+            ctx.lineTo(0,0);
+            ctx.fill();
+            
+            // 劍身
+            ctx.strokeStyle = "#eee";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0,0);
+            ctx.lineTo(40, 10);
+            ctx.stroke();
+            
+            ctx.restore();
+        } else {
+            // 收劍狀態
+            ctx.strokeStyle = "#ccc";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (this.facingRight) {
+                ctx.moveTo(this.x+20, this.y+25); ctx.lineTo(this.x+5, this.y+10);
+            } else {
+                ctx.moveTo(this.x+10, this.y+25); ctx.lineTo(this.x+25, this.y+10);
+            }
+            ctx.stroke();
+        }
+
+        // 頭帶/眼睛
+        ctx.fillStyle = "#d32f2f";
+        ctx.fillRect(this.x, this.y+5, this.w, 5);
+    }
+
+    takeDamage(dmg) {
+        if (this.invincible > 0) return;
+        this.hp -= dmg;
+        this.invincible = 60;
+        updateUI();
+        createParticles(this.x, this.y, 10, '#c62828');
+        if (this.hp <= 0) gameOver(false);
+    }
+}
+
+class Enemy extends Entity {
+    constructor(x, y, w, h, subType) {
+        super(x, y, w, h, 'enemy');
+        this.subType = subType;
+        this.startX = x;
+        this.hp = subType==='boss'?25:(subType==='flyer'?2:3);
+        this.maxHp = this.hp;
+        this.vx = subType==='flyer'?3:2;
+    }
+    update() {
+        // 簡單 AI
+        if (this.subType === 'boss') {
+            if (this.x > this.startX + 200) this.vx = -3;
+            if (this.x < this.startX - 50) this.vx = 3;
+            if (this.grounded && Math.random() < 0.03) this.vy = -12;
+            this.vy += GRAVITY;
+            this.y += this.vy;
+            // BOSS 發射子彈
+            if (Math.random() < 0.05) {
+                entities.push(new Bullet(this.x, this.y+20, (Math.random()-0.5)*10, -5));
+            }
+        } else if (this.subType === 'flyer') {
+            if (this.x > this.startX + 150) this.vx = -3;
+            if (this.x < this.startX - 150) this.vx = 3;
+            this.y += Math.sin(Date.now()/200)*2;
+        } else {
+            if (this.x > this.startX + 80) this.vx = -2;
+            if (this.x < this.startX - 80) this.vx = 2;
+            this.vy += GRAVITY;
+            this.y += this.vy;
+        }
+        this.x += this.vx;
+    }
+    takeDamage(dmg, knockback) {
+        this.hp -= dmg;
+        this.x += knockback; // 擊退
+        this.y -= 5; // 稍微打飛
+        if (this.hp <= 0) {
+            this.dead = true;
+            state.score += (this.subType==='boss'?1000:100);
+            updateUI();
+            createParticles(this.x+this.w/2, this.y+this.h/2, 15, '#555');
+        }
+    }
+    draw(ctx) {
+        ctx.fillStyle = this.subType==='boss'?"#4e342e":"#616161";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        // 血條
+        if (this.hp < this.maxHp) {
+            ctx.fillStyle = "red";
+            ctx.fillRect(this.x, this.y-8, this.w*(this.hp/this.maxHp), 4);
+        }
+        // 臉
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(this.x+5, this.y+10, 5, 5);
+        ctx.fillRect(this.x+this.w-10, this.y+10, 5, 5);
+    }
+}
+
+class Bullet extends Entity {
+    constructor(x, y, vx, vy) {
+        super(x, y, 10, 10, 'enemy_bullet');
+        this.vx = vx; this.vy = vy;
+        this.life = 100;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.1;
+        this.life--;
+        if(this.life<=0) this.dead=true;
+    }
+    draw(ctx) {
+        ctx.fillStyle = "#8d6e63"; // 泥彈
+        ctx.beginPath(); ctx.arc(this.x+5, this.y+5, 5, 0, Math.PI*2); ctx.fill();
+    }
+}
+
+class Particle {
+    constructor(x, y, color) {
+        this.x=x; this.y=y; this.color=color;
+        this.vx=(Math.random()-0.5)*8; this.vy=(Math.random()-0.5)*8;
+        this.life=20;
+    }
+    update() { this.x+=this.vx; this.y+=this.vy; this.life--; }
+    draw(ctx) {
+        ctx.globalAlpha = this.life/20;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 4, 4);
+        ctx.globalAlpha = 1;
+    }
+}
+
+function checkRectCollide(r1, r2) {
+    return (r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
+            r1.y < r2.y + r2.h && r1.y + r1.h > r2.y);
+}
+
+function initLevel(idx) {
+    if (idx >= levels.length) { gameOver(true); return; }
+    state.levelIdx = idx;
+    document.getElementById('level-display').innerText = levels[idx].name;
+    
+    player = new Player(100, 200);
+    entities = [];
+    
+    let rows = levels[idx].data;
+    let mapH = rows.length;
+    let mapW = rows[0].length;
+    state.width = mapW * TILE;
+    let startY = 500 - mapH * TILE;
+    
+    for(let r=0; r<mapH; r++) {
+        for(let c=0; c<mapW; c++) {
+            let ch = rows[r][c];
+            let x = c*TILE, y = startY+r*TILE;
+            if(ch==='1') entities.push(new Entity(x, y, TILE, TILE, 'ground'));
+            if(ch==='2') entities.push(new Entity(x, y, TILE, 20, 'platform'));
+            if(ch==='3') entities.push(new Entity(x, y+20, TILE, 30, 'spike'));
+            if(ch==='4') entities.push(new Enemy(x, y, 40, 40, 'walker'));
+            if(ch==='5') entities.push(new Enemy(x, y, 30, 30, 'flyer'));
+            if(ch==='8') entities.push(new Enemy(x, y-50, 80, 80, 'boss'));
+            if(ch==='9') entities.push(new Entity(x, y, 40, 80, 'goal'));
+        }
+    }
+    updateUI();
+}
+
+function startGame() {
+    startScreen.classList.add('hidden');
+    uiLayer.classList.remove('hidden');
+    state.running = true;
+    state.score = 0;
+    initLevel(0);
+    requestAnimationFrame(loop);
+}
+
+function nextLevel() {
+    endScreen.classList.add('hidden');
+    state.running = true;
+    initLevel(state.levelIdx + 1);
+    requestAnimationFrame(loop);
+}
+
+function resetGame() {
+    endScreen.classList.add('hidden');
+    startGame();
+}
+
+function updateUI() {
+    let h = "";
+    for(let i=0; i<player.maxHp; i++) h += (i<player.hp?"♥":"♡");
+    document.getElementById('hp-display').innerText = h;
+    document.getElementById('score-display').innerText = state.score;
+}
+
+function createParticles(x, y, n, c) {
+    for(let i=0; i<n; i++) entities.push(new Particle(x, y, c));
+}
+
+function gameOver(win) {
+    state.running = false;
+    endScreen.classList.remove('hidden');
+    document.getElementById('final-score').innerText = state.score;
+    let title = document.getElementById('end-title');
+    let msg = document.getElementById('end-msg');
+    let nextBtn = document.getElementById('next-btn');
+    let restartBtn = document.getElementById('restart-btn');
+    
+    if(win) {
+        if(state.levelIdx >= levels.length-1) {
+            title.innerText = "劍聖降臨";
+            title.style.color = "gold";
+            msg.innerText = "您以墨劍斬破虛空，早春圖重現生機！";
+            nextBtn.classList.add('hidden');
+            restartBtn.classList.remove('hidden');
+        } else {
+            title.innerText = "大捷";
+            title.style.color = "#2E7D32";
+            msg.innerText = "此地妖霧已散，前往下一處！";
+            nextBtn.classList.remove('hidden');
+            restartBtn.classList.add('hidden');
+        }
+    } else {
+        title.innerText = "勝敗乃兵家常事";
+        title.style.color = "#c62828";
+        msg.innerText = "請重新磨劍，再來挑戰。";
+        nextBtn.classList.add('hidden');
+        restartBtn.classList.remove('hidden');
+    }
+}
+
+function loop() {
+    if(!state.running) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 鏡頭
+    let targetX = player.x - 300;
+    if(targetX < 0) targetX = 0;
+    if(targetX > state.width - 900) targetX = state.width - 900;
+    state.cameraX += (targetX - state.cameraX)*0.1;
+    
+    ctx.save();
+    ctx.translate(-state.cameraX, 0);
+    
+    // 背景
+    ctx.fillStyle = "rgba(0,0,0,0.1)";
+    ctx.beginPath(); ctx.moveTo(0,500); ctx.lineTo(400,200); ctx.lineTo(800,500); ctx.fill();
+
+    player.update();
+    
+    // 實體更新與物理碰撞
+    player.grounded = false;
+    
+    // 先處理玩家與地形碰撞
+    entities.forEach(e => {
+        if((e.type==='ground'||e.type==='platform') && player.intersect(e)) {
+            // 簡單碰撞邏輯
+            let overlapX = Math.min(player.x+player.w - e.x, e.x+e.w - player.x);
+            let overlapY = Math.min(player.y+player.h - e.y, e.y+e.h - player.y);
+            
+            if (overlapY < overlapX && player.vy > 0 && player.y < e.y) {
+                 player.y = e.y - player.h; player.vy = 0; player.grounded = true;
+            }
+        }
+    });
+
+    for(let i=entities.length-1; i>=0; i--) {
+        let e = entities[i];
+        if(e.type==='player') continue;
+        
+        if(e.update) e.update();
+        
+        // 敵人地形碰撞
+        if(e.type==='enemy' && (e.subType==='walker'||e.subType==='boss')) {
+            e.grounded = false;
+            entities.forEach(wall => {
+                 if((wall.type==='ground'||wall.type==='platform') && 
+                    e.x < wall.x+wall.w && e.x+e.w > wall.x &&
+                    e.y+e.h <= wall.y+10 && e.y+e.h >= wall.y-10) {
+                     e.y = wall.y - e.h; e.vy = 0; e.grounded = true;
+                 }
+            });
+        }
+        
+        // 玩家受傷判定
+        if(player.intersect(e)) {
+            if(e.type==='spike') player.takeDamage(1);
+            if(e.type==='enemy' && !e.dead) player.takeDamage(1);
+            if(e.type==='enemy_bullet' && !e.dead) { player.takeDamage(1); e.dead=true; }
+            if(e.type==='goal') { gameOver(true); return; }
+        }
+        
+        if(e.dead || (e.life!==undefined && e.life<=0)) entities.splice(i,1);
+        else e.draw(ctx);
+    }
+    
+    player.draw(ctx);
+    ctx.restore();
+    requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
+    <script  src="./script.js"></script>
+
+  </body>
+  
+</html>
